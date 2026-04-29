@@ -25,44 +25,73 @@ public class Main {
         return savedData;
     }
 
-    void main() {
-
-        String pathInput = IO.readln("Introdu calea directorului: ");
+    void main() throws IOException {
+        String pathInput = IO.readln("Introdu calea directorului de scanat: ");
         Path path = Paths.get(pathInput);
 
-            if (Files.exists(path) && Files.isDirectory(path)) {
-                boolean isNewPath = false;
-                try (Scanner fileReader = new Scanner(new File("lastDirectory.txt"))){
-                    Path oldPath = Paths.get(fileReader.nextLine());
-                    IO.println(oldPath);
-                    if(path.equals(oldPath)){
-                        IO.println("Calea nu a fost schimbata");
-                    }
-                    else {
-                        try(FileWriter fileWriter = new FileWriter("lastDirectory.txt")){
-                            fileWriter.write(pathInput);
-                            isNewPath = true;
-                        }
-                    }
-                } catch (Exception e){
-                    IO.println(e.getMessage());
-                }
-                Map<String, String> oldMapSnapshot = pushSnapshot("snapshot.txt");
-                try (PrintWriter writer = new PrintWriter(new FileWriter("snapshot.txt"))) {
-                    Files.walkFileTree(path, new FileVisitor(path, writer, oldMapSnapshot));
-                    if (!oldMapSnapshot.isEmpty() && !isNewPath) {
-                        System.out.println("\n--- FISIERE STERSE ---");
-                        for (String fisierSters : oldMapSnapshot.keySet()) {
-                            System.out.println("[STERS] " + fisierSters);
-                        }
-                    }
-                    System.out.println("Snapshot salvat cu succes în snapshot.txt!");
-                } catch (IOException e) {
-                    IO.println("Nu a reusit scanarea: " + e.getMessage());
-                }
-            } else {
-                IO.println("Calea nu este valida!");
-            }
+        // Configurare culori ANSI
+        String VERDE = "\u001B[32m";
+        String ROSU = "\u001B[31m";
+        String GALBEN = "\u001B[33m";
+        String ALBASTRU = "\u001B[34m";
+        String RESET = "\u001B[0m";
 
+        String folderSnapshots = "snapshots";
+        Path dirSnapshots = Paths.get(folderSnapshots);
+
+        if (!Files.exists(dirSnapshots)) {
+            Files.createDirectories(dirSnapshots);
+            IO.println("Directorul '" + folderSnapshots + "' a fost creat.");
+        }
+
+        String snapshotName = pathInput.replace('/', '.').replace('\\', '.');
+        if (snapshotName.startsWith(".")) snapshotName = snapshotName.substring(1);
+
+        Path snapshotFilePath = dirSnapshots.resolve(snapshotName + ".txt");
+        String finalSnapshotPath = snapshotFilePath.toString();
+
+        if (Files.exists(path) && Files.isDirectory(path)) {
+            Map<String, String> oldMapSnapshot = pushSnapshot(finalSnapshotPath);
+
+            try (PrintWriter writer = new PrintWriter(new FileWriter(finalSnapshotPath))) {
+                IO.println("\n" + ALBASTRU + "--- Începe Verificarea de Integritate ---" + RESET);
+
+                FileVisitor visitor = new FileVisitor(path, writer, oldMapSnapshot);
+                Files.walkFileTree(path, visitor);
+
+                Map<String, String> fisiereNoi = visitor.getFisiereNoi();
+
+                IO.println("\n" + ALBASTRU + "--- Analiză Finală ---" + RESET);
+
+                Iterator<Map.Entry<String, String>> itNoi = fisiereNoi.entrySet().iterator();
+                while (itNoi.hasNext()) {
+                    Map.Entry<String, String> nou = itNoi.next();
+                    String caleVeche = null;
+                    for (Map.Entry<String, String> vechi : oldMapSnapshot.entrySet()) {
+                        if (vechi.getValue().equals(nou.getValue())) {
+                            caleVeche = vechi.getKey();
+                            break;
+                        }
+                    }
+
+                    if (caleVeche != null) {
+                        IO.println("[" + GALBEN + "REDENUMIT/MUTAT" + RESET + "] " + caleVeche + " -> " + nou.getKey());
+                        oldMapSnapshot.remove(caleVeche);
+                        itNoi.remove();
+                    }
+                }
+                for (String nume : fisiereNoi.keySet()) {
+                    IO.println("[" + ALBASTRU + "NOU" + RESET + "] " + nume);
+                }
+
+                if (!oldMapSnapshot.isEmpty()) {
+                    for (String fisierSters : oldMapSnapshot.keySet()) {
+                        IO.println("[" + ROSU + "STERS" + RESET + "] " + fisierSters);
+                    }
+                }
+
+                IO.println("\n");
+            }
+        }
     }
 }
