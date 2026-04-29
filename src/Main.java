@@ -4,102 +4,75 @@ import java.util.*;
 
 public class Main {
 
-    void main() throws IOException {
+    public static void main(String[] args) throws IOException {
         String pathInput = IO.readln("Introdu calea directorului: ");
         Path pathTarget = Paths.get(pathInput).toAbsolutePath().normalize();
 
-        Path dirSnapshots = Paths.get("snapshots");
-        if (!Files.exists(dirSnapshots)) Files.createDirectories(dirSnapshots);
-
-
-        String snapshotName = pathTarget.toString().replace('/', '.').replace(':', '.');
-        if (snapshotName.startsWith(".")) snapshotName = snapshotName.substring(1);
-        Path currentSnapshotPath = dirSnapshots.resolve(snapshotName + ".txt");
-
-
-        Map<String, String> oldData = incarcaDateInteligente(pathTarget, dirSnapshots);
-
         if (Files.exists(pathTarget) && Files.isDirectory(pathTarget)) {
-            try (PrintWriter writer = new PrintWriter(new FileWriter(currentSnapshotPath.toFile()))) {
-
-                FileVisitor visitor = new FileVisitor(pathTarget, writer, oldData);
-                Files.walkFileTree(pathTarget, visitor);
-                Map<String, String> noi = visitor.getFisiereNoi();
-                analyzeChanges(noi, oldData);
-                printSummary(visitor.countOK, visitor.countModificat, noi.size(), oldData.size());
-
-                System.out.println("\nSnapshot salvat: " + currentSnapshotPath);
-            }
+            proceseazaDirector(pathTarget);
         } else {
-            System.out.println("Director invalid!");
+            System.out.println("Eroare: Calea nu este un director!");
         }
     }
 
-    private Map<String, String> incarcaDateInteligente(Path target, Path folderSnap) throws IOException {
-        File[] files = folderSnap.toFile().listFiles((d, n) -> n.endsWith(".txt"));
-        if (files == null) return new HashMap<>();
+    public static void proceseazaDirector(Path target) throws IOException {
+        Path snapshotPath = getSnapshotPath(target);
+        Map<String, String> oldData = incarcaSnapshot(snapshotPath);
 
-        File bestFit = null;
-        String targetStr = target.toString().replace('/', '.').replace(':', '.');
-        if (targetStr.startsWith(".")) targetStr = targetStr.substring(1);
+        FileVisitor visitor = new FileVisitor(target, oldData);
+        Files.walkFileTree(target, visitor);
 
-        for (File f : files) {
-            String snapName = f.getName().replace(".txt", "");
-            if (targetStr.startsWith(snapName)) {
-                if (bestFit == null || snapName.length() > bestFit.getName().length()) {
-                    bestFit = f;
-                }
-            }
-        }
+        Map<String, String> noi = visitor.getFisiereNoi();
+        analyzeChanges(noi, oldData, target);
 
-        if (bestFit != null) {
-            System.out.println("\u001B[35m[INFO] Date moștenite din: " + bestFit.getName() + "\u001B[0m");
-            return adaptSnapshot(bestFit.toPath(), target);
-        }
-        return new HashMap<>();
+        salveazaSnapshot(snapshotPath, visitor.getScanareCurenta());
     }
 
-    private Map<String, String> adaptSnapshot(Path snapFile, Path target) throws IOException {
-        Map<String, String> adapted = new HashMap<>();
-        String snapRootStr = snapFile.getFileName().toString().replace(".txt", "").replace('.', '/');
-        if (!snapRootStr.startsWith("/")) snapRootStr = "/" + snapRootStr;
-        Path snapRoot = Paths.get(snapRootStr);
-
-        for (String line : Files.readAllLines(snapFile)) {
-            String[] parts = line.split("\\|");
-            if (parts.length == 2) {
-                Path fileAbs = snapRoot.resolve(parts[0]);
-                if (fileAbs.startsWith(target)) {
-                    adapted.put(target.relativize(fileAbs).toString(), parts[1]);
-                }
-            }
+    public static Path getSnapshotPath(Path folder) {
+        Path dirSnapshots = Paths.get("snapshots");
+        if (!Files.exists(dirSnapshots)) {
+            try { Files.createDirectories(dirSnapshots); } catch (IOException ignored) {}
         }
-        return adapted;
+        String name = folder.toAbsolutePath().normalize().toString()
+                .replace("/", ".").replace("\\", ".").replace(":", "");
+        if (name.startsWith(".")) name = name.substring(1);
+        return dirSnapshots.resolve(name + ".txt");
     }
 
-    private void analyzeChanges(Map<String, String> noi, Map<String, String> sterse) {
+    private static Map<String, String> incarcaSnapshot(Path path) throws IOException {
+        Map<String, String> data = new HashMap<>();
+        if (!Files.exists(path)) return data;
+        for (String linie : Files.readAllLines(path)) {
+            String[] parti = linie.split("\\|");
+            if (parti.length == 2) data.put(parti[0], parti[1]);
+        }
+        return data;
+    }
+
+    private static void salveazaSnapshot(Path path, Map<String, String> date) throws IOException {
+        try (PrintWriter writer = new PrintWriter(new FileWriter(path.toFile()))) {
+            date.forEach((k, v) -> writer.println(k + "|" + v));
+        }
+    }
+
+    private static void analyzeChanges(Map<String, String> noi, Map<String, String> sterse, Path startPath) {
+        String GALBEN = "\u001B[33m", ALBASTRU = "\u001B[34m", ROSU = "\u001B[31m", RESET = "\u001B[0m";
         Iterator<Map.Entry<String, String>> it = noi.entrySet().iterator();
+
         while (it.hasNext()) {
             Map.Entry<String, String> n = it.next();
-            String vechiPath = null;
+            String vPath = null;
             for (Map.Entry<String, String> s : sterse.entrySet()) {
-                if (s.getValue().equals(n.getValue())) {
-                    vechiPath = s.getKey();
-                    break;
-                }
+                if (s.getValue().equals(n.getValue())) { vPath = s.getKey(); break; }
             }
-            if (vechiPath != null) {
-                System.out.println("\u001B[33m[REDENUMIT] " + vechiPath + " -> " + n.getKey() + "\u001B[0m");
-                sterse.remove(vechiPath);
+            if (vPath != null) {
+                System.out.println(GALBEN + "[REDENUMIT] " + RESET + startPath.relativize(Paths.get(vPath)) + " -> " + startPath.relativize(Paths.get(n.getKey())));
+                sterse.remove(vPath);
                 it.remove();
             }
         }
-        noi.forEach((k, v) -> System.out.println("\u001B[34m[NOU] " + k + "\u001B[0m"));
-        sterse.forEach((k, v) -> System.out.println("\u001B[31m[STERS] " + k + "\u001B[0m"));
-    }
 
-    private void printSummary(int ok, int mod, int noi, int sterse) {
-        System.out.println("\n--- SUMAR INTEGRITATE ---");
-        System.out.println("Intacte: " + ok + " | Modificate: " + mod + " | Noi: " + noi + " | Șterse: " + sterse);
+        noi.forEach((k, v) -> System.out.println(ALBASTRU + "[NOU] " + RESET + startPath.relativize(Paths.get(k))));
+        sterse.forEach((k, v) -> System.out.println(ROSU + "[STERS] " + RESET + startPath.relativize(Paths.get(k))));
     }
 }
