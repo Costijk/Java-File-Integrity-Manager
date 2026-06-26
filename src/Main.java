@@ -4,16 +4,196 @@ import java.util.*;
 
 public class Main {
 
-    public static void main(String[] args) throws IOException {
-        String pathInput = IO.readln("Introdu calea directorului: ");
-        Path pathTarget = Paths.get(pathInput).toAbsolutePath().normalize();
+    // Fisierele unde vom salva istoricul si favoritele
+    private static final Path RECENTS_FILE = Paths.get("snapshots", "recents.txt");
+    private static final Path FAVORITES_FILE = Paths.get("snapshots", "favorites.txt");
 
-        if (Files.exists(pathTarget) && Files.isDirectory(pathTarget)) {
-            proceseazaDirector(pathTarget);
-        } else {
-            System.out.println("Eroare: Calea nu este un director!");
+    public static void main(String[] args) throws IOException {
+        Files.createDirectories(Paths.get("snapshots"));
+
+        while (true) {
+            System.out.println("\n\u001B[36m=== MENIU INTEGRITATE ===\u001B[0m");
+            System.out.println("1. Scaneaza un director nou");
+            System.out.println("2. Scaneaza din recente");
+            System.out.println("3. Favorite");
+            System.out.println("0. Iesire");
+
+            String opt = IO.readln("\nAlege o optiune: ");
+
+            if (opt.equals("0")) {
+                System.out.println("\u001B[32mLa revedere!\u001B[0m");
+                break;
+            } else if (opt.equals("1")) {
+                String pathInput = IO.readln("Introdu calea directorului: ");
+                Path pathTarget = Paths.get(pathInput).toAbsolutePath().normalize();
+                ruleazaScanare(pathTarget);
+            } else if (opt.equals("2")) {
+                afiseazaSiScaneazaLista(RECENTS_FILE, "RECENTE");
+            } else if (opt.equals("3")) {
+                meniuFavorite(); // Intram in sub-meniul de favorite
+            } else {
+                System.out.println("\u001B[31mOptiune invalida!\u001B[0m");
+            }
         }
     }
+
+    // --- SUB-MENIU FAVORITE ---
+
+    private static void meniuFavorite() throws IOException {
+        while (true) {
+            System.out.println("\n\u001B[36m--- MENIU FAVORITE ---\u001B[0m");
+            System.out.println("1. Scaneaza un director din favorite");
+            System.out.println("2. Adauga un director nou");
+            System.out.println("3. Sterge un director din favorite");
+            System.out.println("0. Inapoi la meniul principal");
+
+            String opt = IO.readln("Alege o optiune: ");
+
+            if (opt.equals("0")) {
+                break;
+            } else if (opt.equals("1")) {
+                afiseazaSiScaneazaLista(FAVORITES_FILE, "FAVORITE");
+            } else if (opt.equals("2")) {
+                adaugaInFavorite();
+            } else if (opt.equals("3")) {
+                stergeDinFavorite();
+            } else {
+                System.out.println("\u001B[31mOptiune invalida!\u001B[0m");
+            }
+        }
+    }
+
+    private static void adaugaInFavorite() throws IOException {
+        String pathInput = IO.readln("Introdu calea directorului de adaugat: ");
+        Path target = Paths.get(pathInput).toAbsolutePath().normalize();
+
+        if (Files.exists(target) && Files.isDirectory(target)) {
+            List<String> favorite = new ArrayList<>();
+            if (Files.exists(FAVORITES_FILE)) {
+                favorite = Files.readAllLines(FAVORITES_FILE);
+            }
+
+            String calea = target.toString();
+            if (!favorite.contains(calea)) {
+                favorite.add(calea);
+                try (PrintWriter writer = new PrintWriter(new FileWriter(FAVORITES_FILE.toFile(), true))) {
+                    writer.println(calea);
+                }
+                System.out.println("\u001B[32m[+] " + target.getFileName() + " a fost adaugat!\u001B[0m");
+            } else {
+                System.out.println("\u001B[33mDirectorul este deja in lista.\u001B[0m");
+            }
+        } else {
+            System.out.println("\u001B[31mEroare: Calea nu este un director valid!\u001B[0m");
+        }
+    }
+
+    private static void stergeDinFavorite() throws IOException {
+        if (!Files.exists(FAVORITES_FILE)) {
+            System.out.println("\u001B[33mLista este goala.\u001B[0m");
+            return;
+        }
+
+        List<String> favorite = Files.readAllLines(FAVORITES_FILE);
+        if (favorite.isEmpty()) {
+            System.out.println("\u001B[33mLista este goala.\u001B[0m");
+            return;
+        }
+
+        System.out.println("\n\u001B[35m--- STERGE DIN FAVORITE ---\u001B[0m");
+        for (int i = 0; i < favorite.size(); i++) {
+            System.out.println((i + 1) + ". " + favorite.get(i));
+        }
+        System.out.println("0. Anulare");
+
+        String alegere = IO.readln("Alege numarul pentru a-l sterge: ");
+        try {
+            int index = Integer.parseInt(alegere);
+            if (index == 0) return;
+            if (index > 0 && index <= favorite.size()) {
+                String sters = favorite.remove(index - 1);
+
+                // Salvam lista actualizata inapoi in fisier
+                try (PrintWriter writer = new PrintWriter(new FileWriter(FAVORITES_FILE.toFile()))) {
+                    for (String f : favorite) {
+                        writer.println(f);
+                    }
+                }
+                System.out.println("\u001B[32m[-] Eliminat: " + sters + "\u001B[0m");
+            } else {
+                System.out.println("\u001B[31mNumar invalid!\u001B[0m");
+            }
+        } catch (NumberFormatException e) {
+            System.out.println("\u001B[31mTe rog introdu un numar valid!\u001B[0m");
+        }
+    }
+
+    // --- LOGICA DE SCANARE SI RECENTE ---
+
+    private static void ruleazaScanare(Path target) throws IOException {
+        if (Files.exists(target) && Files.isDirectory(target)) {
+            proceseazaDirector(target);
+            salveazaInRecente(target);
+        } else {
+            System.out.println("\u001B[31mEroare: Calea nu este un director valid!\u001B[0m");
+        }
+    }
+
+    private static void afiseazaSiScaneazaLista(Path fisierLista, String titlu) throws IOException {
+        if (!Files.exists(fisierLista)) {
+            System.out.println("\u001B[33mLista de " + titlu.toLowerCase() + " este goala.\u001B[0m");
+            return;
+        }
+
+        List<String> lista = Files.readAllLines(fisierLista);
+        if (lista.isEmpty()) {
+            System.out.println("\u001B[33mLista de " + titlu.toLowerCase() + " este goala.\u001B[0m");
+            return;
+        }
+
+        System.out.println("\n\u001B[35m--- DIRECTOARE " + titlu + " ---\u001B[0m");
+        for (int i = 0; i < lista.size(); i++) {
+            System.out.println((i + 1) + ". " + lista.get(i));
+        }
+        System.out.println("0. Inapoi");
+
+        String alegere = IO.readln("Alege numarul: ");
+        try {
+            int index = Integer.parseInt(alegere);
+            if (index == 0) return;
+            if (index > 0 && index <= lista.size()) {
+                Path target = Paths.get(lista.get(index - 1));
+                ruleazaScanare(target);
+            } else {
+                System.out.println("\u001B[31mNumar invalid!\u001B[0m");
+            }
+        } catch (NumberFormatException e) {
+            System.out.println("\u001B[31mTe rog introdu un numar valid!\u001B[0m");
+        }
+    }
+
+    private static void salveazaInRecente(Path target) throws IOException {
+        List<String> recente = new ArrayList<>();
+        if (Files.exists(RECENTS_FILE)) {
+            recente = Files.readAllLines(RECENTS_FILE);
+        }
+
+        String calea = target.toString();
+        recente.remove(calea);
+        recente.add(0, calea);
+
+        if (recente.size() > 5) {
+            recente = recente.subList(0, 5);
+        }
+
+        try (PrintWriter writer = new PrintWriter(new FileWriter(RECENTS_FILE.toFile()))) {
+            for (String r : recente) {
+                writer.println(r);
+            }
+        }
+    }
+
+    // --- LOGICA DE PROCESARE A SNAPSHOT-URILOR ---
 
     public static void proceseazaDirector(Path target) throws IOException {
         Path snapshotPath = getSnapshotPath(target);
@@ -26,13 +206,11 @@ public class Main {
         analyzeChanges(noi, oldData, target);
 
         salveazaSnapshot(snapshotPath, visitor.getScanareCurenta());
+        System.out.println("\n\u001B[32mFinalizat: " + target.getFileName() + "\u001B[0m");
     }
 
     public static Path getSnapshotPath(Path folder) {
         Path dirSnapshots = Paths.get("snapshots");
-        if (!Files.exists(dirSnapshots)) {
-            try { Files.createDirectories(dirSnapshots); } catch (IOException ignored) {}
-        }
         String name = folder.toAbsolutePath().normalize().toString()
                 .replace("/", ".").replace("\\", ".").replace(":", "");
         if (name.startsWith(".")) name = name.substring(1);
