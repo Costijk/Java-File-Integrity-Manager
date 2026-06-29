@@ -17,6 +17,10 @@ A lightweight, console-based Java application that monitors file system integrit
 - **Favorites** — Persistent bookmarking of frequently scanned directories, manageable via an interactive sub-menu
 - **Color-Coded Console Output** — ANSI escape codes highlight status for quick visual scanning
 
+## Note
+
+This project was built on **Fedora KDE** and targets the Linux filesystem structure. Keep this in mind if running on other operating systems, as path handling and console behavior may differ.
+
 ## Requirements
 
 - **Java 14+** (uses `String.repeat()` and modern switch expressions)
